@@ -1,0 +1,32 @@
+{
+    "name": "yellow-three/bagisto-iyzico",
+    "description": "Iyzico payment gateway for Bagisto e-commerce platform",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "bagisto",
+        "iyzico",
+        "payment",
+        "gateway",
+        "ecommerce"
+    ],
+    "autoload": {
+        "psr-4": {
+            "Webkul\\Iyzico\\": "src/"
+        }
+    },
+    "require": {
+        "php": "^8.1",
+        "bagisto/bagisto": "^2.0",
+        "yellow-three/omnipay-iyzico": "*"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\Iyzico\\Providers\\IyzicoServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
