@@ -18,8 +18,7 @@
     "require": {
         "php": "^8.1",
         "bagisto/bagisto": "^2.0",
-        "omnipay/common": "^3.0",
-        "yellow-three/omnipay-iyzico": "^1.0"
+        "yellow-three/omnipay-iyzico": "*"
     },
     "extra": {
         "laravel": {

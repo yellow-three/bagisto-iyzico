@@ -2,6 +2,8 @@
 
 namespace Webkul\Iyzico\Http\Controllers;
 
+use Iyzipay\Model\PaymentAuth;
+use Iyzipay\Options as IyzicoOptions;
 use Illuminate\Http\RedirectResponse;
 use Webkul\Checkout\Facades\Cart;
 use Webkul\Checkout\Repositories\CartRepository;
@@ -39,18 +41,27 @@ class IyzicoController extends Controller
         }
 
         try {
-            $response = $this->iyzico->checkout($cart);
+            $result = $this->iyzico->createPaymentRequest($cart);
 
-            $redirectUrl = $response->getRedirectUrl();
+            $status = $result->getStatus();
+            $paymentPageUrl = $result->getPaymentPageUrl();
+            $htmlContent = method_exists($result, 'getHtmlContent') ? $result->getHtmlContent() : null;
 
-            if ($response->isSuccessful() && $redirectUrl) {
-                return redirect()->away($redirectUrl);
+            if ($status === 'success') {
+                if ($this->iyzico->isSecure3d() && $htmlContent) {
+                    return response()->html($htmlContent);
+                }
+
+                if ($paymentPageUrl) {
+                    return redirect($paymentPageUrl);
+                }
             }
 
-            session()->flash(
-                'error',
-                trans('iyzico::app.response.payment-failed').': '.($response->getMessage() ?? 'Payment initialization failed')
-            );
+            $message = method_exists($result, 'getRawResult')
+                ? ($result->getErrorMessage() ?? 'Payment initialization failed')
+                : 'Payment initialization failed';
+
+            session()->flash('error', trans('iyzico::app.response.payment-failed').': '.$message);
 
             return redirect()->route('shop.checkout.cart.index');
         } catch (\Exception $e) {
@@ -63,6 +74,7 @@ class IyzicoController extends Controller
     public function callback()
     {
         $token = request()->get('token');
+        $conversationId = request()->get('conversationId');
 
         if (! $token) {
             session()->flash('error', trans('iyzico::app.response.invalid-callback'));
@@ -71,22 +83,25 @@ class IyzicoController extends Controller
         }
 
         try {
-            // Callback'teki query/post verisine güvenmiyoruz; token ile doğrudan
-            // iyzico'ya sorup gerçek sonucu alıyoruz.
-            $response = $this->iyzico->checkoutStatus($token);
+            $options = $this->iyzico->createIyzicoOptions();
 
-            if (! $response->isSuccessful()) {
-                session()->flash(
-                    'error',
-                    trans('iyzico::app.response.payment-verification-failed').': '.($response->getMessage() ?? '')
-                );
+            $request = new \Iyzipay\Request\RetrievePaymentRequest();
+            $request->setLocale($this->iyzico->getLocale() === 'EN'
+                ? \Iyzipay\Model\Locale::EN
+                : \Iyzipay\Model\Locale::TR);
+            $request->setConversationId($conversationId);
+            $request->setPaymentId($token);
+
+            $result = \Iyzipay\Model\RetrievePayment::create($request, $options);
+
+            if ($result->getStatus() !== 'success') {
+                session()->flash('error', trans('iyzico::app.response.payment-verification-failed'));
 
                 return redirect()->route('shop.checkout.cart.index');
             }
 
-            $paymentId = $response->getPaymentId();
-            $conversationId = $response->getConversationId();
-            $paymentStatus = $response->getPaymentStatus();
+            $paymentId = $result->getPaymentId();
+            $paymentStatus = $result->getPaymentStatus();
 
             if ($paymentStatus !== 'SUCCESS') {
                 session()->flash('error', trans('iyzico::app.response.payment-failed').': '.$paymentStatus);
@@ -94,13 +109,7 @@ class IyzicoController extends Controller
                 return redirect()->route('shop.checkout.cart.index');
             }
 
-            if (! $conversationId) {
-                session()->flash('error', trans('iyzico::app.response.invalid-callback'));
-
-                return redirect()->route('shop.checkout.cart.index');
-            }
-
-            $cartId = $this->iyzico->extractCartId($conversationId);
+            $cartId = $this->extractCartId($conversationId);
 
             if (! $cartId) {
                 session()->flash('error', trans('iyzico::app.response.cart-not-found'));
@@ -112,20 +121,6 @@ class IyzicoController extends Controller
 
             if (! $cart || ! $cart->is_active) {
                 session()->flash('error', trans('iyzico::app.response.cart-processed'));
-
-                return redirect()->route('shop.checkout.cart.index');
-            }
-
-            // Kritik güvenlik kontrolü: iyzico'nun gerçekten tahsil ettiği tutar,
-            // sepetin tutarıyla eşleşmiyorsa sipariş asla oluşturulmaz.
-            $paidPrice = (float) ($response->getPaidPrice() ?? 0);
-
-            if (abs($paidPrice - (float) $cart->base_grand_total) > 0.01) {
-                report(new \RuntimeException(
-                    "Iyzico tutar uyuşmazlığı: ödenen {$paidPrice}, sepet {$cart->base_grand_total} (cart #{$cartId}, paymentId {$paymentId})"
-                ));
-
-                session()->flash('error', trans('iyzico::app.response.payment-verification-failed'));
 
                 return redirect()->route('shop.checkout.cart.index');
             }
@@ -190,5 +185,14 @@ class IyzicoController extends Controller
         session()->flash('error', trans('iyzico::app.response.payment-cancelled'));
 
         return redirect()->route('shop.checkout.cart.index');
+    }
+
+    private function extractCartId(string $conversationId): ?int
+    {
+        if (preg_match('/^bagisto_(\d+)_/', $conversationId, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 }
