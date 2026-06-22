@@ -106,6 +106,7 @@ class Iyzico extends BasePayment
             'conversationId' => $this->buildConversationId($cart),
             'basketId' => 'bagisto_'.$cart->id,
             'returnUrl' => route('iyzico.standard.callback'),
+            'card' => $this->buildCard($cart),
             'items' => $this->buildItems($cart),
         ])->send();
     }
@@ -133,6 +134,39 @@ class Iyzico extends BasePayment
         }
 
         return null;
+    }
+
+    /**
+     * Bagisto cart adreslerini iyzico Checkout Form Initialize için
+     * buyer/shippingAddress/billingAddress alanlarına çevirir.
+     */
+    private function buildCard($cart): array
+    {
+        $billing = $cart->billing_address;
+
+        $card = [
+            'firstName' => $billing->first_name,
+            'lastName' => $billing->last_name,
+            'email' => $billing->email ?? $cart->customer_email,
+            'phone' => $billing->phone,
+            'billingAddress1' => $billing->address,
+            'billingCity' => $billing->city,
+            'billingPostcode' => $billing->postcode,
+            'billingCountry' => $billing->country,
+        ];
+
+        $shipping = $cart->shipping_address;
+
+        if ($shipping) {
+            $card['shippingFirstName'] = $shipping->first_name;
+            $card['shippingLastName'] = $shipping->last_name;
+            $card['shippingAddress1'] = $shipping->address;
+            $card['shippingCity'] = $shipping->city;
+            $card['shippingPostcode'] = $shipping->postcode;
+            $card['shippingCountry'] = $shipping->country;
+        }
+
+        return $card;
     }
 
     /**
