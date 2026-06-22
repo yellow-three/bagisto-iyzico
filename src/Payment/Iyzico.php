@@ -144,6 +144,10 @@ class Iyzico extends BasePayment
     {
         $billing = $cart->billing_address;
 
+        if (! $billing) {
+            throw new \RuntimeException('Billing address is required for iyzico checkout.');
+        }
+
         $card = [
             'firstName' => $billing->first_name,
             'lastName' => $billing->last_name,
